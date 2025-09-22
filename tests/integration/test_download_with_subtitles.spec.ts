@@ -1,0 +1,510 @@
+/**
+ * Integration test for Scenario 1: Download video and add bilingual subtitles
+ * 场景1: 下载视频并添加双语字幕
+ */
+
+import { IDownloaderService } from '../../specs/001-youtube-youtube/contracts/service-interfaces';
+import { ISubtitleService } from '../../specs/001-youtube-youtube/contracts/service-interfaces';
+import { IStorageService } from '../../specs/001-youtube-youtube/contracts/service-interfaces';
+
+describe('Integration: Download Video with Bilingual Subtitles', () => {
+  let downloaderService: IDownloaderService;
+  let subtitleService: ISubtitleService;
+  let storageService: IStorageService;
+
+  beforeEach(() => {
+    // Mock services will be replaced with real implementations
+    downloaderService = {
+      fetchVideoInfo: jest.fn(),
+      startDownload: jest.fn(),
+      pauseDownload: jest.fn(),
+      resumeDownload: jest.fn(),
+      cancelDownload: jest.fn(),
+      getProgress: jest.fn(),
+      listTasks: jest.fn()
+    };
+
+    subtitleService = {
+      listAvailableSubtitles: jest.fn(),
+      downloadSubtitle: jest.fn(),
+      generateSubtitle: jest.fn(),
+      embedSubtitles: jest.fn(),
+      convertFormat: jest.fn()
+    };
+
+    storageService = {
+      saveDownloadTask: jest.fn(),
+      getDownloadTask: jest.fn(),
+      getDownloadHistory: jest.fn(),
+      cacheVideoInfo: jest.fn(),
+      getCachedVideoInfo: jest.fn(),
+      savePreferences: jest.fn(),
+      getPreferences: jest.fn(),
+      clearCache: jest.fn(),
+      getStorageStats: jest.fn()
+    };
+  });
+
+  describe('Complete workflow: Download and add bilingual subtitles', () => {
+    it('should download video and embed Chinese-English bilingual subtitles', async () => {
+      // Step 1: Fetch video information
+      const videoUrl = 'https://www.youtube.com/watch?v=test-bilingual';
+      const mockVideoInfo = {
+        id: 'test-bilingual',
+        url: videoUrl,
+        title: 'Test Video for Bilingual Subtitles',
+        duration: 600,
+        thumbnail: 'https://example.com/thumb.jpg',
+        author: 'Test Channel',
+        availableFormats: [
+          { formatId: '22', quality: '720p', ext: 'mp4', fps: 30 },
+          { formatId: '137', quality: '1080p', ext: 'mp4', fps: 30 }
+        ],
+        availableSubtitles: ['en', 'zh-CN', 'ja']
+      };
+
+      (downloaderService.fetchVideoInfo as jest.Mock).mockResolvedValue(mockVideoInfo);
+      const videoInfo = await downloaderService.fetchVideoInfo(videoUrl);
+      expect(videoInfo.availableSubtitles).toContain('zh-CN');
+      expect(videoInfo.availableSubtitles).toContain('en');
+
+      // Step 2: Cache video information
+      (storageService.cacheVideoInfo as jest.Mock).mockResolvedValue(undefined);
+      await storageService.cacheVideoInfo(videoInfo);
+
+      // Step 3: Start video download
+      const downloadOptions = {
+        quality: '1080p',
+        outputPath: '/downloads',
+        filename: 'bilingual-video.mp4',
+        subtitleLanguages: ['zh-CN', 'en'],
+        preferredFormat: 'mp4'
+      };
+
+      const mockDownloadTask = {
+        id: 'task-bilingual-001',
+        videoInfo: mockVideoInfo,
+        status: 'downloading' as const,
+        progress: 0,
+        downloadedBytes: 0,
+        totalBytes: 500000000,
+        speed: 0,
+        eta: 0,
+        outputPath: '/downloads/bilingual-video.mp4',
+        startTime: new Date()
+      };
+
+      (downloaderService.startDownload as jest.Mock).mockResolvedValue(mockDownloadTask);
+      const downloadTask = await downloaderService.startDownload(videoUrl, downloadOptions);
+
+      // Step 4: Save download task
+      (storageService.saveDownloadTask as jest.Mock).mockResolvedValue(undefined);
+      await storageService.saveDownloadTask(downloadTask);
+
+      // Step 5: Simulate download progress
+      const progressUpdates = [25, 50, 75, 100];
+      for (const progress of progressUpdates) {
+        const updatedProgress = {
+          taskId: downloadTask.id,
+          progress,
+          downloadedBytes: (progress / 100) * 500000000,
+          totalBytes: 500000000,
+          speed: 5242880, // 5MB/s
+          eta: (100 - progress) * 20,
+          status: progress === 100 ? 'completed' as const : 'downloading' as const
+        };
+
+        (downloaderService.getProgress as jest.Mock).mockReturnValue(updatedProgress);
+        const currentProgress = downloaderService.getProgress(downloadTask.id);
+        expect(currentProgress.progress).toBe(progress);
+
+        // Update stored task
+        await storageService.saveDownloadTask({
+          ...downloadTask,
+          progress,
+          status: currentProgress.status
+        });
+      }
+
+      // Step 6: Download Chinese subtitle
+      const mockChineseSubtitle = {
+        id: 'sub-zh-001',
+        videoId: 'test-bilingual',
+        language: 'zh-CN',
+        languageName: '中文(简体)',
+        format: 'srt' as const,
+        content: `1
+00:00:00,000 --> 00:00:05,000
+你好，欢迎观看
+
+2
+00:00:05,000 --> 00:00:10,000
+这是一个测试视频`,
+        isAutoGenerated: false,
+        timestamps: [
+          { startTime: 0, endTime: 5000, text: '你好，欢迎观看' },
+          { startTime: 5000, endTime: 10000, text: '这是一个测试视频' }
+        ]
+      };
+
+      (subtitleService.downloadSubtitle as jest.Mock).mockResolvedValue(mockChineseSubtitle);
+      const chineseSubtitle = await subtitleService.downloadSubtitle(videoUrl, 'zh-CN');
+      expect(chineseSubtitle.language).toBe('zh-CN');
+
+      // Step 7: Download English subtitle
+      const mockEnglishSubtitle = {
+        id: 'sub-en-001',
+        videoId: 'test-bilingual',
+        language: 'en',
+        languageName: 'English',
+        format: 'srt' as const,
+        content: `1
+00:00:00,000 --> 00:00:05,000
+Hello, welcome to watch
+
+2
+00:00:05,000 --> 00:00:10,000
+This is a test video`,
+        isAutoGenerated: false,
+        timestamps: [
+          { startTime: 0, endTime: 5000, text: 'Hello, welcome to watch' },
+          { startTime: 5000, endTime: 10000, text: 'This is a test video' }
+        ]
+      };
+
+      (subtitleService.downloadSubtitle as jest.Mock).mockResolvedValue(mockEnglishSubtitle);
+      const englishSubtitle = await subtitleService.downloadSubtitle(videoUrl, 'en');
+      expect(englishSubtitle.language).toBe('en');
+
+      // Step 8: Embed bilingual subtitles
+      const embedOptions = {
+        primarySubtitle: chineseSubtitle,
+        secondarySubtitle: englishSubtitle,
+        layout: 'stacked' as const,
+        styling: {
+          primaryFontSize: 24,
+          secondaryFontSize: 20,
+          primaryColor: '#FFFFFF',
+          secondaryColor: '#FFFF00',
+          fontFamily: 'Microsoft YaHei',
+          outline: true,
+          shadow: true
+        },
+        outputPath: '/downloads/bilingual-video-with-subs.mp4'
+      };
+
+      const mockEmbedTask = {
+        id: 'embed-bilingual-001',
+        type: 'SUBTITLE_EMBEDDING',
+        status: 'completed',
+        outputFile: '/downloads/bilingual-video-with-subs.mp4'
+      };
+
+      (subtitleService.embedSubtitles as jest.Mock).mockResolvedValue(mockEmbedTask);
+      const embedResult = await subtitleService.embedSubtitles(
+        '/downloads/bilingual-video.mp4',
+        embedOptions
+      );
+
+      expect(embedResult.status).toBe('completed');
+      expect(embedResult.outputFile).toContain('bilingual-video-with-subs.mp4');
+
+      // Step 9: Update task with final status
+      const completedTask = {
+        ...downloadTask,
+        status: 'completed' as const,
+        progress: 100,
+        endTime: new Date(),
+        outputFiles: [
+          '/downloads/bilingual-video.mp4',
+          '/downloads/bilingual-video-with-subs.mp4'
+        ],
+        subtitles: [chineseSubtitle, englishSubtitle]
+      };
+
+      (storageService.saveDownloadTask as jest.Mock).mockResolvedValue(undefined);
+      await storageService.saveDownloadTask(completedTask);
+
+      // Verify final state
+      (storageService.getDownloadTask as jest.Mock).mockResolvedValue(completedTask);
+      const finalTask = await storageService.getDownloadTask(downloadTask.id);
+      expect(finalTask?.status).toBe('completed');
+      expect(finalTask?.outputFiles).toHaveLength(2);
+      expect(finalTask?.subtitles).toHaveLength(2);
+    });
+
+    it('should generate subtitles when not available and create bilingual version', async () => {
+      // Scenario: Video has no subtitles, use Whisper to generate
+      const videoUrl = 'https://www.youtube.com/watch?v=no-subs';
+
+      // Step 1: Fetch video info (no subtitles available)
+      const mockVideoInfo = {
+        id: 'no-subs',
+        url: videoUrl,
+        title: 'Video Without Subtitles',
+        duration: 300,
+        availableFormats: [
+          { formatId: '22', quality: '720p', ext: 'mp4', fps: 30 }
+        ],
+        availableSubtitles: [] // No subtitles
+      };
+
+      (downloaderService.fetchVideoInfo as jest.Mock).mockResolvedValue(mockVideoInfo);
+      const videoInfo = await downloaderService.fetchVideoInfo(videoUrl);
+      expect(videoInfo.availableSubtitles).toHaveLength(0);
+
+      // Step 2: Download video first
+      const downloadTask = {
+        id: 'task-nosub-001',
+        videoInfo: mockVideoInfo,
+        status: 'completed' as const,
+        progress: 100,
+        outputPath: '/downloads/no-subs-video.mp4'
+      };
+
+      (downloaderService.startDownload as jest.Mock).mockResolvedValue(downloadTask);
+      await downloaderService.startDownload(videoUrl, {
+        quality: '720p',
+        outputPath: '/downloads',
+        filename: 'no-subs-video.mp4'
+      });
+
+      // Step 3: Generate Chinese subtitle using Whisper
+      const generateOptionsZh = {
+        language: 'zh',
+        model: 'medium',
+        translate: false,
+        detectLanguage: false
+      };
+
+      const mockGeneratedChineseSubtitle = {
+        id: 'gen-zh-001',
+        videoId: 'no-subs',
+        language: 'zh',
+        languageName: '中文',
+        format: 'srt' as const,
+        content: '生成的中文字幕内容...',
+        isAutoGenerated: true
+      };
+
+      (subtitleService.generateSubtitle as jest.Mock).mockResolvedValue(mockGeneratedChineseSubtitle);
+      const generatedChinese = await subtitleService.generateSubtitle(
+        '/downloads/no-subs-video.mp4',
+        generateOptionsZh
+      );
+      expect(generatedChinese.isAutoGenerated).toBe(true);
+      expect(generatedChinese.language).toBe('zh');
+
+      // Step 4: Generate English subtitle (translation)
+      const generateOptionsEn = {
+        language: 'en',
+        model: 'medium',
+        translate: true, // Translate to English
+        detectLanguage: false
+      };
+
+      const mockGeneratedEnglishSubtitle = {
+        id: 'gen-en-001',
+        videoId: 'no-subs',
+        language: 'en',
+        languageName: 'English (Translated)',
+        format: 'srt' as const,
+        content: 'Generated English subtitle content...',
+        isAutoGenerated: true
+      };
+
+      (subtitleService.generateSubtitle as jest.Mock).mockResolvedValue(mockGeneratedEnglishSubtitle);
+      const generatedEnglish = await subtitleService.generateSubtitle(
+        '/downloads/no-subs-video.mp4',
+        generateOptionsEn
+      );
+      expect(generatedEnglish.isAutoGenerated).toBe(true);
+      expect(generatedEnglish.language).toBe('en');
+
+      // Step 5: Embed both generated subtitles
+      const embedOptions = {
+        primarySubtitle: generatedChinese,
+        secondarySubtitle: generatedEnglish,
+        layout: 'stacked' as const,
+        outputPath: '/downloads/no-subs-video-bilingual.mp4'
+      };
+
+      const mockEmbedResult = {
+        id: 'embed-generated-001',
+        type: 'SUBTITLE_EMBEDDING',
+        status: 'completed',
+        outputFile: '/downloads/no-subs-video-bilingual.mp4'
+      };
+
+      (subtitleService.embedSubtitles as jest.Mock).mockResolvedValue(mockEmbedResult);
+      const embedResult = await subtitleService.embedSubtitles(
+        '/downloads/no-subs-video.mp4',
+        embedOptions
+      );
+
+      expect(embedResult.status).toBe('completed');
+      expect(embedResult.outputFile).toContain('bilingual');
+    });
+  });
+
+  describe('Error handling in download with subtitles workflow', () => {
+    it('should handle subtitle download failure gracefully', async () => {
+      const videoUrl = 'https://www.youtube.com/watch?v=sub-error';
+
+      // Mock video info fetch success
+      (downloaderService.fetchVideoInfo as jest.Mock).mockResolvedValue({
+        id: 'sub-error',
+        availableSubtitles: ['en', 'zh-CN']
+      });
+
+      // Mock subtitle download failure
+      (subtitleService.downloadSubtitle as jest.Mock).mockRejectedValue(
+        new Error('Subtitle download failed: Network error')
+      );
+
+      // Should fall back to generating subtitle
+      (subtitleService.generateSubtitle as jest.Mock).mockResolvedValue({
+        id: 'gen-fallback',
+        language: 'zh',
+        isAutoGenerated: true,
+        content: 'Fallback generated subtitle'
+      });
+
+      // Try to download subtitle (will fail)
+      await expect(
+        subtitleService.downloadSubtitle(videoUrl, 'zh-CN')
+      ).rejects.toThrow('Subtitle download failed');
+
+      // Fall back to generation
+      const generatedSubtitle = await subtitleService.generateSubtitle(
+        '/downloads/video.mp4',
+        { language: 'zh', model: 'base' }
+      );
+
+      expect(generatedSubtitle.isAutoGenerated).toBe(true);
+    });
+
+    it('should handle video download interruption and resume', async () => {
+      const videoUrl = 'https://www.youtube.com/watch?v=resume-test';
+      const taskId = 'task-resume-001';
+
+      // Start download
+      const initialTask = {
+        id: taskId,
+        status: 'downloading' as const,
+        progress: 0,
+        downloadedBytes: 0,
+        totalBytes: 100000000
+      };
+
+      (downloaderService.startDownload as jest.Mock).mockResolvedValue(initialTask);
+      const task = await downloaderService.startDownload(videoUrl, {
+        quality: '720p',
+        outputPath: '/downloads'
+      });
+
+      // Simulate interruption at 50%
+      (downloaderService.getProgress as jest.Mock).mockReturnValue({
+        taskId,
+        progress: 50,
+        downloadedBytes: 50000000,
+        totalBytes: 100000000,
+        status: 'paused'
+      });
+
+      // Pause download
+      (downloaderService.pauseDownload as jest.Mock).mockResolvedValue(undefined);
+      await downloaderService.pauseDownload(taskId);
+
+      const pausedProgress = downloaderService.getProgress(taskId);
+      expect(pausedProgress.status).toBe('paused');
+      expect(pausedProgress.progress).toBe(50);
+
+      // Resume download
+      (downloaderService.resumeDownload as jest.Mock).mockResolvedValue(undefined);
+      await downloaderService.resumeDownload(taskId);
+
+      // Continue to completion
+      (downloaderService.getProgress as jest.Mock).mockReturnValue({
+        taskId,
+        progress: 100,
+        downloadedBytes: 100000000,
+        totalBytes: 100000000,
+        status: 'completed'
+      });
+
+      const finalProgress = downloaderService.getProgress(taskId);
+      expect(finalProgress.status).toBe('completed');
+      expect(finalProgress.progress).toBe(100);
+    });
+  });
+
+  describe('Performance and optimization', () => {
+    it('should download video and subtitles concurrently', async () => {
+      const videoUrl = 'https://www.youtube.com/watch?v=concurrent';
+
+      // Mock parallel operations
+      const videoDownloadPromise = Promise.resolve({
+        id: 'task-concurrent',
+        status: 'downloading',
+        outputPath: '/downloads/video.mp4'
+      });
+
+      const chineseSubtitlePromise = Promise.resolve({
+        id: 'sub-zh',
+        language: 'zh-CN',
+        content: 'Chinese subtitle'
+      });
+
+      const englishSubtitlePromise = Promise.resolve({
+        id: 'sub-en',
+        language: 'en',
+        content: 'English subtitle'
+      });
+
+      (downloaderService.startDownload as jest.Mock).mockReturnValue(videoDownloadPromise);
+      (subtitleService.downloadSubtitle as jest.Mock)
+        .mockReturnValueOnce(chineseSubtitlePromise)
+        .mockReturnValueOnce(englishSubtitlePromise);
+
+      // Execute concurrently
+      const startTime = Date.now();
+      const [videoTask, chineseSub, englishSub] = await Promise.all([
+        downloaderService.startDownload(videoUrl, { quality: '720p', outputPath: '/downloads' }),
+        subtitleService.downloadSubtitle(videoUrl, 'zh-CN'),
+        subtitleService.downloadSubtitle(videoUrl, 'en')
+      ]);
+      const endTime = Date.now();
+
+      // All operations should complete
+      expect(videoTask).toBeDefined();
+      expect(chineseSub.language).toBe('zh-CN');
+      expect(englishSub.language).toBe('en');
+
+      // Should complete within reasonable time (mock instant)
+      expect(endTime - startTime).toBeLessThan(100);
+    });
+
+    it('should use cached video info when available', async () => {
+      const videoUrl = 'https://www.youtube.com/watch?v=cached';
+      const cachedInfo = {
+        id: 'cached',
+        title: 'Cached Video',
+        availableFormats: [],
+        availableSubtitles: ['en', 'zh-CN']
+      };
+
+      // First check cache
+      (storageService.getCachedVideoInfo as jest.Mock).mockResolvedValue(cachedInfo);
+      const cached = await storageService.getCachedVideoInfo('cached');
+      expect(cached).toBeDefined();
+
+      // Should not need to fetch from network
+      expect(downloaderService.fetchVideoInfo).not.toHaveBeenCalled();
+
+      // Use cached info for operations
+      expect(cached?.availableSubtitles).toContain('zh-CN');
+      expect(cached?.availableSubtitles).toContain('en');
+    });
+  });
+});

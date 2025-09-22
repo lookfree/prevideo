@@ -1,0 +1,21 @@
+{
+  "name": "prevideo-downloader",
+  "version": "1.0.0",
+  "description": "YouTube video downloader with subtitle support",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "dev": "electron .",
+    "build": "tsc"
+  },
+  "keywords": ["youtube", "downloader"],
+  "author": "PreVideo Inc.",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^28.1.0",
+    "typescript": "^5.3.3",
+    "@types/node": "^20.10.5"
+  },
+  "dependencies": {
+    "electron-store": "^8.1.0"
+  }
+}
