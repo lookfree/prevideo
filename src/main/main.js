@@ -96,6 +96,7 @@ ipcMain.handle('video:fetchInfo', async (event, url) => {
 ipcMain.handle('video:startDownload', async (event, options) => {
   try {
     console.log('开始下载:', options);
+    const taskId = options.taskId || Date.now();  // 使用前端传来的taskId
 
     // 生成输出文件名
     const videoInfo = await downloader.getVideoInfo(options.url);
@@ -117,10 +118,12 @@ ipcMain.handle('video:startDownload', async (event, options) => {
       const progressInfo = downloader.parseProgress(data.toString());
       if (progressInfo) {
         event.sender.send('download-progress', {
-          taskId: result.taskId,
+          taskId: taskId,
           progress: progressInfo.percent,
           speed: progressInfo.speed,
-          eta: progressInfo.eta
+          eta: progressInfo.eta,
+          stage: 'downloading',
+          status: `下载中 ${progressInfo.percent}%`
         });
       }
     });
@@ -129,7 +132,7 @@ ipcMain.handle('video:startDownload', async (event, options) => {
       if (code === 0) {
         // 发送下载完成但还在处理的状态
         event.sender.send('download-progress', {
-          taskId: result.taskId,
+          taskId: taskId,
           progress: 100,
           stage: 'processing',
           status: '视频下载完成，准备处理字幕...'
@@ -144,7 +147,7 @@ ipcMain.handle('video:startDownload', async (event, options) => {
           if (fs.existsSync(srtPath)) {
             console.log('发现英文字幕，开始翻译成中文...');
             event.sender.send('subtitle-start', {
-              taskId: result.taskId,
+              taskId: taskId,
               stage: 'subtitle',
               status: '正在翻译字幕...'
             });
@@ -158,7 +161,7 @@ ipcMain.handle('video:startDownload', async (event, options) => {
               await translator.createBilingualSRT(srtPath, zhSrtPath, (current, total) => {
                 translatedLines = current;
                 event.sender.send('subtitle-progress', {
-                  taskId: result.taskId,
+                  taskId: taskId,
                   current: current,
                   total: total,
                   percent: Math.round((current / total) * 100),
@@ -166,27 +169,28 @@ ipcMain.handle('video:startDownload', async (event, options) => {
                 });
               });
 
-              // 使用 ffmpeg 重新嵌入双语字幕
+              // 使用 ffmpeg 烧录硬字幕到视频
               const { spawn } = require('child_process');
               const tempOutput = outputPath.replace('.mp4', '_final.mp4');
 
+              // 硬字幕参数 - 使用 subtitles 滤镜将字幕直接烧录到视频画面
               const ffmpegArgs = [
                 '-i', outputPath,
-                '-i', zhSrtPath,
-                '-c', 'copy',
-                '-c:s', 'mov_text',
-                '-metadata:s:s:0', 'language=chi',
-                '-disposition:s:0', 'default',
+                '-vf', `subtitles='${zhSrtPath}':force_style='FontName=Microsoft YaHei,FontSize=24,PrimaryColour=&Hffffff&,OutlineColour=&H000000&,BorderStyle=1,Outline=1,Shadow=0,MarginV=20'`,
+                '-c:a', 'copy',  // 音频直接复制
+                '-c:v', 'libx264',  // 视频重新编码
+                '-preset', 'fast',  // 编码速度预设
+                '-crf', '23',  // 视频质量（0-51，越小质量越好）
                 tempOutput
               ];
 
               const ffmpeg = spawn('ffmpeg', ffmpegArgs);
 
-              // 发送嵌入字幕进度
+              // 发送烧录硬字幕进度
               event.sender.send('subtitle-progress', {
-                taskId: result.taskId,
+                taskId: taskId,
                 stage: 'finalizing',
-                status: '正在嵌入字幕到视频...',
+                status: '正在烧录硬字幕到视频画面...',
                 percent: 95
               });
 
@@ -195,12 +199,12 @@ ipcMain.handle('video:startDownload', async (event, options) => {
                   // 替换原文件
                   fs.unlinkSync(outputPath);
                   fs.renameSync(tempOutput, outputPath);
-                  console.log('双语字幕已嵌入视频');
+                  console.log('硬字幕已烧录到视频');
                 }
 
                 // 发送最终完成事件
                 event.sender.send('download-complete', {
-                  taskId: result.taskId,
+                  taskId: taskId,
                   filePath: outputPath,
                   subtitlePath: zhSrtPath,
                   stage: 'completed',
@@ -210,13 +214,13 @@ ipcMain.handle('video:startDownload', async (event, options) => {
             } catch (error) {
               console.error('字幕翻译失败:', error);
               event.sender.send('download-complete', {
-                taskId: result.taskId,
+                taskId: taskId,
                 filePath: outputPath
               });
             }
           } else {
             event.sender.send('download-complete', {
-              taskId: result.taskId,
+              taskId: taskId,
               filePath: outputPath
             });
           }
@@ -226,7 +230,7 @@ ipcMain.handle('video:startDownload', async (event, options) => {
         if (options.subtitle && options.generateSubtitle) {
           // 发送字幕生成开始事件
           event.sender.send('subtitle-start', {
-            taskId: 'subtitle_' + result.taskId,
+            taskId: 'subtitle_' + taskId,
             videoPath: outputPath
           });
 
@@ -235,7 +239,7 @@ ipcMain.handle('video:startDownload', async (event, options) => {
             try {
               // 这里可以调用 Whisper 生成字幕
               event.sender.send('subtitle-progress', {
-                taskId: 'subtitle_' + result.taskId,
+                taskId: 'subtitle_' + taskId,
                 progress: 0,
                 status: '正在生成字幕...'
               });
@@ -244,7 +248,7 @@ ipcMain.handle('video:startDownload', async (event, options) => {
               for (let i = 10; i <= 100; i += 10) {
                 setTimeout(() => {
                   event.sender.send('subtitle-progress', {
-                    taskId: 'subtitle_' + result.taskId,
+                    taskId: 'subtitle_' + taskId,
                     progress: i,
                     status: `字幕生成中... ${i}%`
                   });
@@ -254,13 +258,13 @@ ipcMain.handle('video:startDownload', async (event, options) => {
               // 字幕生成完成
               setTimeout(() => {
                 event.sender.send('subtitle-complete', {
-                  taskId: 'subtitle_' + result.taskId,
+                  taskId: 'subtitle_' + taskId,
                   subtitlePath: outputPath.replace('.mp4', '.srt')
                 });
               }, 1100);
             } catch (error) {
               event.sender.send('subtitle-error', {
-                taskId: 'subtitle_' + result.taskId,
+                taskId: 'subtitle_' + taskId,
                 error: error.message
               });
             }
@@ -268,14 +272,14 @@ ipcMain.handle('video:startDownload', async (event, options) => {
         }
       } else {
         event.sender.send('download-error', {
-          taskId: result.taskId,
+          taskId: taskId,
           error: 'Download failed with code: ' + code
         });
       }
     });
 
     return {
-      taskId: result.taskId,
+      taskId: taskId,
       status: 'downloading',
       outputPath: outputPath
     };

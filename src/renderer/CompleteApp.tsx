@@ -160,20 +160,12 @@ const CompleteApp: React.FC = () => {
           url: url,
           outputPath: downloadPath,
           quality: settings.quality,
-          subtitle: settings.autoGenerateSubtitle
+          subtitle: settings.autoGenerateSubtitle,
+          taskId: taskId  // 传递taskId以便后端发送正确的事件
         });
 
-        // 模拟下载进度
-        simulateDownload(taskId, videoInfo.title);
-
-        // 如果启用字幕生成
-        if (settings.autoGenerateSubtitle) {
-          setTimeout(() => {
-            setTasks(prev => prev.map(t =>
-              t.id === taskId ? {...t, status: '生成字幕中...'} : t
-            ));
-          }, 5000);
-        }
+        // 不再使用模拟，让真实的IPC事件更新UI
+        console.log('开始下载任务:', result);
 
       } catch (error) {
         setTasks(prev => prev.map(t =>
@@ -181,7 +173,8 @@ const CompleteApp: React.FC = () => {
         ));
       }
     } else {
-      // 模拟模式
+      // 没有Electron环境时的模拟模式
+      console.warn('在非Electron环境下运行，使用模拟模式');
       simulateDownload(taskId, '示例视频');
     }
 

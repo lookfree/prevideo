@@ -72,14 +72,14 @@ class SimpleVideoDownloader {
 
     // 质量选择 - 使用最简单的格式
     if (options.quality === '1080p') {
-      args.push('-S', 'res:1080,ext:mp4');
+      args.push('-f', 'best[height<=1080][ext=mp4]/best[height<=1080]/best');
     } else if (options.quality === '720p') {
-      args.push('-S', 'res:720,ext:mp4');
+      args.push('-f', 'best[height<=720][ext=mp4]/best[height<=720]/best');
     } else if (options.quality === '480p') {
-      args.push('-S', 'res:480,ext:mp4');
+      args.push('-f', 'best[height<=480][ext=mp4]/best[height<=480]/best');
     } else {
       // 默认选择最佳质量
-      args.push('-S', 'ext:mp4');
+      args.push('-f', 'best[ext=mp4]/best');
     }
 
     // 字幕选项 - 先下载字幕文件，后续翻译并嵌入

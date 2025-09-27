@@ -25,9 +25,11 @@ PreVideo 是一款功能完整的YouTube视频下载桌面应用，基于Electro
 
 ### 🗣️ 双语字幕
 - **自动生成字幕** - 基于OpenAI Whisper AI
+- **智能翻译** - 使用DeepSeek API进行高质量中文翻译
 - **双语同步显示** - 中英文字幕叠加或并排
 - **字幕格式** - SRT/VTT格式导出
 - **语言选择** - 主语言/副语言自由配置
+- **批量翻译** - 50条字幕同时翻译，提高效率
 
 ### 🗜️ 视频处理
 - **视频压缩** - FFmpeg引擎，多种预设
@@ -58,11 +60,16 @@ cd prevideo
 # 安装依赖
 npm install
 
-# 安装yt-dlp（必需）
+# 安装yt-dlp和ffmpeg（必需）
 # macOS
-brew install yt-dlp
+brew install yt-dlp ffmpeg
 # Windows
 winget install yt-dlp
+winget install ffmpeg
+
+# 配置DeepSeek API（可选，用于字幕翻译）
+# 在代码中设置API密钥或通过环境变量
+export DEEPSEEK_API_KEY="your-api-key"
 
 # 启动应用
 npm run dev
@@ -83,7 +90,9 @@ npm run dev
 3. **配置字幕**
    - ✅ 双语字幕：中英文同时显示
    - ✅ 自动生成：Whisper AI生成
+   - ✅ 智能翻译：DeepSeek API翻译
    - 选择主语言和副语言
+   - 实时显示翻译进度
 
 4. **查看文件**
    - 下载完成后显示文件路径
@@ -155,6 +164,24 @@ prevideo/
 ### 默认下载路径
 默认保存到用户的下载文件夹，可在设置中修改。
 
+### DeepSeek API配置
+字幕翻译功能使用DeepSeek API，需要配置API密钥：
+
+1. **获取API密钥**
+   - 访问 [DeepSeek Platform](https://platform.deepseek.com/)
+   - 注册并获取API密钥
+
+2. **配置方式**
+   - 方式1：直接在 `src/main/subtitle-translator.js` 中设置
+   - 方式2：使用环境变量 `DEEPSEEK_API_KEY`
+   - 方式3：在应用设置界面中配置（开发中）
+
+3. **翻译特性**
+   - 批量翻译：每批50条字幕同时处理
+   - 实时进度：显示翻译进度 (X/Y条)
+   - 高质量翻译：专业级中文翻译质量
+   - 自动重试：失败自动重试机制
+
 ### 代理设置
 支持 HTTP/HTTPS/SOCKS5 代理，在设置→网络中配置。
 
@@ -170,6 +197,7 @@ prevideo/
 - **下载引擎**: yt-dlp 2025.9.5
 - **视频处理**: FFmpeg
 - **字幕AI**: OpenAI Whisper
+- **字幕翻译**: DeepSeek API
 - **数据存储**: electron-store 8.1.0
 - **构建工具**: Vite 5.4.20
 - **测试框架**: Jest + Playwright
@@ -205,6 +233,7 @@ prevideo/
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) - 强大的视频下载工具
 - [FFmpeg](https://ffmpeg.org/) - 完整的视频处理解决方案
 - [Whisper](https://github.com/openai/whisper) - OpenAI 的语音识别模型
+- [DeepSeek](https://www.deepseek.com/) - 高质量中文翻译API
 - [Electron](https://www.electronjs.org/) - 跨平台桌面应用框架
 - 所有贡献者和支持者
 
