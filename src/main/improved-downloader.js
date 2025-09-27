@@ -2,9 +2,10 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
-class VideoDownloader {
+class ImprovedVideoDownloader {
   constructor() {
     this.downloads = new Map();
+    this.subtitleTasks = new Map();
   }
 
   // 获取视频信息
@@ -74,7 +75,7 @@ class VideoDownloader {
       .slice(0, 10);
   }
 
-  // 下载视频
+  // 下载视频 - 改进版
   async downloadVideo(url, outputPath, options = {}) {
     const taskId = 'download_' + Date.now();
 
@@ -93,41 +94,28 @@ class VideoDownloader {
       '--newline'
     ];
 
-    // 添加质量选项 - 确保下载视频和音频
+    // 使用简单的格式选择，确保获取完整视频
     if (options.quality === '1080p') {
-      // 下载最高1080p的视频+最佳音频
-      args.push('-f', 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080]');
+      args.push('-f', 'best[height<=1080]');
     } else if (options.quality === '720p') {
-      // 下载最高720p的视频+最佳音频
-      args.push('-f', 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]');
+      args.push('-f', 'best[height<=720]');
     } else if (options.quality === '480p') {
-      // 下载最高480p的视频+最佳音频
-      args.push('-f', 'bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480]');
+      args.push('-f', 'best[height<=480]');
     } else {
-      // 默认：下载最佳质量的mp4视频，确保有音频
-      args.push('-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best');
+      // 默认下载最佳质量
+      args.push('-f', 'best');
     }
 
-    // 确保音频被正确合并
-    args.push('--audio-format', 'mp3');
-    args.push('--audio-quality', '0');
-
-    // 字幕处理
+    // 字幕作为单独文件下载
     if (options.subtitle) {
-      args.push('--write-subs');           // 下载字幕文件
-      args.push('--write-auto-subs');      // 下载自动生成的字幕
-      args.push('--sub-langs', 'zh,en');   // 指定语言优先级
-      args.push('--convert-subs', 'srt');  // 转换为SRT格式
-      args.push('--embed-subs');           // 嵌入字幕到视频
-      args.push('--sub-format', 'srt/best'); // 优先选择SRT格式
+      args.push('--write-subs');
+      args.push('--write-auto-subs');
+      args.push('--sub-langs', 'zh,en');
+      // 不嵌入，保持独立
     }
 
-    // 确保正确的输出格式，使用remux避免重新编码
-    args.push('--merge-output-format', 'mp4');
-    args.push('--remux-video', 'mp4');
-
-    // 使用ffmpeg确保音视频同步
-    args.push('--prefer-ffmpeg');
+    // 不需要重新编码，保持原始质量
+    // 只有在必要时才合并
 
     const process = spawn('yt-dlp', args);
 
@@ -148,6 +136,32 @@ class VideoDownloader {
     };
   }
 
+  // 生成字幕 - 独立任务
+  async generateSubtitle(videoPath, options = {}) {
+    const subtitleTaskId = 'subtitle_' + Date.now();
+
+    // 模拟Whisper字幕生成
+    // 在实际实现中，这里会调用Whisper API
+    const subtitlePath = videoPath.replace('.mp4', '.srt');
+
+    const subtitleTask = {
+      id: subtitleTaskId,
+      videoPath,
+      subtitlePath,
+      status: 'generating',
+      progress: 0,
+      startTime: Date.now()
+    };
+
+    this.subtitleTasks.set(subtitleTaskId, subtitleTask);
+
+    // 返回字幕任务ID，可以独立追踪进度
+    return {
+      taskId: subtitleTaskId,
+      subtitlePath
+    };
+  }
+
   // 解析进度信息
   parseProgress(data) {
     const progressMatch = data.match(/\[download\]\s+(\d+\.?\d*)%/);
@@ -165,12 +179,29 @@ class VideoDownloader {
     return null;
   }
 
+  // 获取字幕任务进度
+  getSubtitleProgress(taskId) {
+    const task = this.subtitleTasks.get(taskId);
+    return task ? task.progress : 0;
+  }
+
   // 取消下载
   cancelDownload(taskId) {
     const download = this.downloads.get(taskId);
     if (download && download.process) {
       download.process.kill('SIGTERM');
       this.downloads.delete(taskId);
+      return true;
+    }
+    return false;
+  }
+
+  // 取消字幕生成
+  cancelSubtitle(taskId) {
+    const task = this.subtitleTasks.get(taskId);
+    if (task) {
+      task.status = 'cancelled';
+      this.subtitleTasks.delete(taskId);
       return true;
     }
     return false;
@@ -186,6 +217,18 @@ class VideoDownloader {
       startTime: info.startTime
     }));
   }
+
+  // 获取所有字幕任务
+  getAllSubtitleTasks() {
+    return Array.from(this.subtitleTasks.entries()).map(([id, info]) => ({
+      id,
+      videoPath: info.videoPath,
+      subtitlePath: info.subtitlePath,
+      status: info.status,
+      progress: info.progress,
+      startTime: info.startTime
+    }));
+  }
 }
 
-module.exports = VideoDownloader;
+module.exports = ImprovedVideoDownloader;

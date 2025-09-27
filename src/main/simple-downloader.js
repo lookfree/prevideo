@@ -2,7 +2,7 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
-class VideoDownloader {
+class SimpleVideoDownloader {
   constructor() {
     this.downloads = new Map();
   }
@@ -37,44 +37,22 @@ class VideoDownloader {
               author: info.uploader || 'Unknown',
               duration: info.duration || 0,
               thumbnail: info.thumbnail,
-              description: info.description || '',
-              viewCount: info.view_count || 0,
-              likeCount: info.like_count || 0,
-              uploadDate: info.upload_date,
-              url: url,
-              availableFormats: this.parseFormats(info.formats),
-              availableSubtitles: Object.keys(info.subtitles || {})
+              url: url
             });
           } catch (e) {
+            console.error('解析视频信息失败:', e.message);
+            console.error('原始输出:', output);
             reject(new Error('Failed to parse video info: ' + e.message));
           }
         } else {
-          reject(new Error('Failed to get video info: ' + error));
+          console.error('yt-dlp 错误输出:', error);
+          reject(new Error('Failed to get video info: ' + (error || 'Unknown error')));
         }
       });
     });
   }
 
-  // 解析格式信息
-  parseFormats(formats) {
-    if (!formats) return [];
-
-    return formats
-      .filter(f => f.vcodec !== 'none' && f.acodec !== 'none')
-      .map(f => ({
-        formatId: f.format_id,
-        ext: f.ext,
-        resolution: f.resolution || `${f.width}x${f.height}`,
-        fps: f.fps,
-        filesize: f.filesize || f.filesize_approx,
-        quality: f.format_note || f.quality,
-        vcodec: f.vcodec,
-        acodec: f.acodec
-      }))
-      .slice(0, 10);
-  }
-
-  // 下载视频
+  // 简化的下载方法 - 确保音视频正常
   async downloadVideo(url, outputPath, options = {}) {
     const taskId = 'download_' + Date.now();
 
@@ -84,50 +62,39 @@ class VideoDownloader {
       fs.mkdirSync(dir, { recursive: true });
     }
 
-    // 构建yt-dlp命令参数
+    // 使用最简单的参数，让yt-dlp自动处理
     const args = [
       url,
       '-o', outputPath,
       '--no-playlist',
-      '--progress',
-      '--newline'
+      '--force-overwrites'  // 如果文件存在则覆盖
     ];
 
-    // 添加质量选项 - 确保下载视频和音频
+    // 质量选择 - 使用最简单的格式
     if (options.quality === '1080p') {
-      // 下载最高1080p的视频+最佳音频
-      args.push('-f', 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080]');
+      args.push('-S', 'res:1080,ext:mp4');
     } else if (options.quality === '720p') {
-      // 下载最高720p的视频+最佳音频
-      args.push('-f', 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]');
+      args.push('-S', 'res:720,ext:mp4');
     } else if (options.quality === '480p') {
-      // 下载最高480p的视频+最佳音频
-      args.push('-f', 'bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480]');
+      args.push('-S', 'res:480,ext:mp4');
     } else {
-      // 默认：下载最佳质量的mp4视频，确保有音频
-      args.push('-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best');
+      // 默认选择最佳质量
+      args.push('-S', 'ext:mp4');
     }
 
-    // 确保音频被正确合并
-    args.push('--audio-format', 'mp3');
-    args.push('--audio-quality', '0');
-
-    // 字幕处理
+    // 字幕选项 - 先下载字幕文件，后续翻译并嵌入
     if (options.subtitle) {
-      args.push('--write-subs');           // 下载字幕文件
       args.push('--write-auto-subs');      // 下载自动生成的字幕
-      args.push('--sub-langs', 'zh,en');   // 指定语言优先级
+      args.push('--sub-langs', 'en');      // 下载英文字幕
       args.push('--convert-subs', 'srt');  // 转换为SRT格式
-      args.push('--embed-subs');           // 嵌入字幕到视频
-      args.push('--sub-format', 'srt/best'); // 优先选择SRT格式
+      // 暂不嵌入，等翻译后再嵌入
     }
 
-    // 确保正确的输出格式，使用remux避免重新编码
-    args.push('--merge-output-format', 'mp4');
-    args.push('--remux-video', 'mp4');
+    // 显示进度
+    args.push('--progress');
+    args.push('--newline');
 
-    // 使用ffmpeg确保音视频同步
-    args.push('--prefer-ffmpeg');
+    console.log('执行命令: yt-dlp', args.join(' '));
 
     const process = spawn('yt-dlp', args);
 
@@ -140,7 +107,6 @@ class VideoDownloader {
       status: 'downloading'
     });
 
-    // 返回任务信息和进程
     return {
       taskId,
       process,
@@ -175,17 +141,6 @@ class VideoDownloader {
     }
     return false;
   }
-
-  // 获取所有下载任务
-  getAllDownloads() {
-    return Array.from(this.downloads.entries()).map(([id, info]) => ({
-      id,
-      url: info.url,
-      outputPath: info.outputPath,
-      status: info.status,
-      startTime: info.startTime
-    }));
-  }
 }
 
-module.exports = VideoDownloader;
+module.exports = SimpleVideoDownloader;

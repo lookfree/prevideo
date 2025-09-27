@@ -5,6 +5,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 应用信息
   getVersion: () => ipcRenderer.invoke('app:getVersion'),
 
+  // 事件监听
+  on: (channel, callback) => {
+    const validChannels = ['download-progress', 'download-complete', 'download-error',
+                          'subtitle-start', 'subtitle-progress', 'subtitle-complete', 'subtitle-error'];
+    if (validChannels.includes(channel)) {
+      ipcRenderer.on(channel, (event, ...args) => callback(event, ...args));
+    }
+  },
+
   // 视频操作
   video: {
     fetchInfo: (url) => ipcRenderer.invoke('video:fetchInfo', url),

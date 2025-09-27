@@ -76,48 +76,33 @@ root.render(
 );
 
 // Hot module replacement for development
-if (module.hot) {
-  module.hot.accept('./App', () => {
-    const NextApp = require('./App').default;
-    root.render(
-      <React.StrictMode>
-        <Provider store={store}>
-          <ThemeProvider theme={theme}>
-            <CssBaseline />
-            <SnackbarProvider
-              maxSnack={3}
-              anchorOrigin={{
-                vertical: 'bottom',
-                horizontal: 'right',
-              }}
-              autoHideDuration={5000}
-            >
-              <NextApp />
-            </SnackbarProvider>
-          </ThemeProvider>
-        </Provider>
-      </React.StrictMode>
-    );
-  });
+// @ts-ignore
+if (import.meta.hot) {
+  // @ts-ignore
+  import.meta.hot.accept();
 }
 
 // Handle theme changes from main process
-window.prevideo?.settings.onThemeChanged((theme: string) => {
-  // Implement theme change logic
-  console.log('Theme changed to:', theme);
-});
+if (window.prevideo?.settings) {
+  window.prevideo.settings.onThemeChanged?.((theme: string) => {
+    // Implement theme change logic
+    console.log('Theme changed to:', theme);
+  });
 
-// Handle language changes from main process
-window.prevideo?.settings.onLanguageChanged((language: string) => {
-  // Implement language change logic
-  console.log('Language changed to:', language);
-});
+  // Handle language changes from main process
+  window.prevideo.settings.onLanguageChanged?.((language: string) => {
+    // Implement language change logic
+    console.log('Language changed to:', language);
+  });
+}
 
 // Handle update notifications
-window.prevideo?.system.onUpdateDownloaded((updateInfo: any) => {
-  // Show update notification
-  console.log('Update downloaded:', updateInfo);
-});
+if (window.prevideo?.system) {
+  window.prevideo.system.onUpdateDownloaded?.((updateInfo: any) => {
+    // Show update notification
+    console.log('Update downloaded:', updateInfo);
+  });
+}
 
 // Prevent drag and drop on the window
 document.addEventListener('dragover', (e) => {

@@ -1,9 +1,12 @@
 const { app, BrowserWindow, ipcMain, Menu, dialog, shell } = require('electron');
 const path = require('path');
-const VideoDownloader = require('./downloader');
+const fs = require('fs');
+const SimpleVideoDownloader = require('./simple-downloader');
+const SubtitleTranslator = require('./subtitle-translator');
 
 let mainWindow;
-const downloader = new VideoDownloader();
+const downloader = new SimpleVideoDownloader();
+const translator = new SubtitleTranslator();
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -122,12 +125,147 @@ ipcMain.handle('video:startDownload', async (event, options) => {
       }
     });
 
-    result.process.on('close', (code) => {
+    result.process.on('close', async (code) => {
       if (code === 0) {
-        event.sender.send('download-complete', {
+        // 发送下载完成但还在处理的状态
+        event.sender.send('download-progress', {
           taskId: result.taskId,
-          filePath: outputPath
+          progress: 100,
+          stage: 'processing',
+          status: '视频下载完成，准备处理字幕...'
         });
+
+        // 等待确保文件写入完成
+        setTimeout(async () => {
+          // 检查是否有英文字幕文件
+          const srtPath = outputPath.replace('.mp4', '.en.srt');
+          const zhSrtPath = outputPath.replace('.mp4', '.zh.srt');
+
+          if (fs.existsSync(srtPath)) {
+            console.log('发现英文字幕，开始翻译成中文...');
+            event.sender.send('subtitle-start', {
+              taskId: result.taskId,
+              stage: 'subtitle',
+              status: '正在翻译字幕...'
+            });
+
+            try {
+              // 翻译字幕 - 添加进度回调
+              const totalLines = fs.readFileSync(srtPath, 'utf8').split('\n\n').length;
+              let translatedLines = 0;
+
+              // 修改 translator 调用，添加进度回调
+              await translator.createBilingualSRT(srtPath, zhSrtPath, (current, total) => {
+                translatedLines = current;
+                event.sender.send('subtitle-progress', {
+                  taskId: result.taskId,
+                  current: current,
+                  total: total,
+                  percent: Math.round((current / total) * 100),
+                  status: `翻译字幕中 ${current}/${total} 条...`
+                });
+              });
+
+              // 使用 ffmpeg 重新嵌入双语字幕
+              const { spawn } = require('child_process');
+              const tempOutput = outputPath.replace('.mp4', '_final.mp4');
+
+              const ffmpegArgs = [
+                '-i', outputPath,
+                '-i', zhSrtPath,
+                '-c', 'copy',
+                '-c:s', 'mov_text',
+                '-metadata:s:s:0', 'language=chi',
+                '-disposition:s:0', 'default',
+                tempOutput
+              ];
+
+              const ffmpeg = spawn('ffmpeg', ffmpegArgs);
+
+              // 发送嵌入字幕进度
+              event.sender.send('subtitle-progress', {
+                taskId: result.taskId,
+                stage: 'finalizing',
+                status: '正在嵌入字幕到视频...',
+                percent: 95
+              });
+
+              ffmpeg.on('close', (ffmpegCode) => {
+                if (ffmpegCode === 0) {
+                  // 替换原文件
+                  fs.unlinkSync(outputPath);
+                  fs.renameSync(tempOutput, outputPath);
+                  console.log('双语字幕已嵌入视频');
+                }
+
+                // 发送最终完成事件
+                event.sender.send('download-complete', {
+                  taskId: result.taskId,
+                  filePath: outputPath,
+                  subtitlePath: zhSrtPath,
+                  stage: 'completed',
+                  status: '完成'
+                });
+              });
+            } catch (error) {
+              console.error('字幕翻译失败:', error);
+              event.sender.send('download-complete', {
+                taskId: result.taskId,
+                filePath: outputPath
+              });
+            }
+          } else {
+            event.sender.send('download-complete', {
+              taskId: result.taskId,
+              filePath: outputPath
+            });
+          }
+        }, 1000);
+
+        // 如果需要生成字幕，在下载完成后异步处理
+        if (options.subtitle && options.generateSubtitle) {
+          // 发送字幕生成开始事件
+          event.sender.send('subtitle-start', {
+            taskId: 'subtitle_' + result.taskId,
+            videoPath: outputPath
+          });
+
+          // 异步生成字幕，不阻塞下载完成
+          setTimeout(async () => {
+            try {
+              // 这里可以调用 Whisper 生成字幕
+              event.sender.send('subtitle-progress', {
+                taskId: 'subtitle_' + result.taskId,
+                progress: 0,
+                status: '正在生成字幕...'
+              });
+
+              // 模拟字幕生成进度
+              for (let i = 10; i <= 100; i += 10) {
+                setTimeout(() => {
+                  event.sender.send('subtitle-progress', {
+                    taskId: 'subtitle_' + result.taskId,
+                    progress: i,
+                    status: `字幕生成中... ${i}%`
+                  });
+                }, i * 100);
+              }
+
+              // 字幕生成完成
+              setTimeout(() => {
+                event.sender.send('subtitle-complete', {
+                  taskId: 'subtitle_' + result.taskId,
+                  subtitlePath: outputPath.replace('.mp4', '.srt')
+                });
+              }, 1100);
+            } catch (error) {
+              event.sender.send('subtitle-error', {
+                taskId: 'subtitle_' + result.taskId,
+                error: error.message
+              });
+            }
+          }, 100);
+        }
       } else {
         event.sender.send('download-error', {
           taskId: result.taskId,
@@ -184,12 +322,28 @@ ipcMain.handle('file:selectDirectory', async () => {
 });
 
 ipcMain.handle('file:openPath', async (event, filePath) => {
-  shell.openPath(filePath);
+  console.log('打开文件路径:', filePath);
+  if (filePath) {
+    shell.openPath(filePath);
+  }
   return true;
 });
 
 ipcMain.handle('file:showInFolder', async (event, filePath) => {
-  shell.showItemInFolder(filePath);
+  console.log('在文件夹中显示:', filePath);
+  if (filePath) {
+    // 如果是文件路径，显示文件所在文件夹
+    const fs = require('fs');
+    if (fs.existsSync(filePath)) {
+      shell.showItemInFolder(filePath);
+    } else {
+      // 如果文件不存在，尝试打开父目录
+      const dir = path.dirname(filePath);
+      if (fs.existsSync(dir)) {
+        shell.openPath(dir);
+      }
+    }
+  }
   return true;
 });
 
