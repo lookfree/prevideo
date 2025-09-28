@@ -22,11 +22,13 @@ PreVideo 是一款功能完整的YouTube视频下载桌面应用，基于Electro
 - **实时进度显示** - 下载速度、剩余时间、百分比
 - **断点续传** - 支持暂停和恢复下载
 - **文件管理** - 自定义下载路径，一键打开文件夹
+- **API Key配置** - 页面配置DeepSeek API，无需修改代码
 
 ### 🗣️ 双语字幕
 - **自动生成字幕** - 基于OpenAI Whisper AI
 - **智能翻译** - 使用DeepSeek API进行高质量中文翻译
 - **双语同步显示** - 中英文字幕叠加或并排
+- **硬字幕烧录** - 字幕直接烧录到视频画面
 - **字幕格式** - SRT/VTT格式导出
 - **语言选择** - 主语言/副语言自由配置
 - **批量翻译** - 50条字幕同时翻译，提高效率
@@ -67,12 +69,10 @@ brew install yt-dlp ffmpeg
 winget install yt-dlp
 winget install ffmpeg
 
-# 配置DeepSeek API（可选，用于字幕翻译）
-# 在代码中设置API密钥或通过环境变量
-export DEEPSEEK_API_KEY="your-api-key"
-
 # 启动应用
 npm run dev
+
+# 首次启动会自动提示配置DeepSeek API Key
 ```
 
 ### 📱 使用指南
@@ -165,16 +165,22 @@ prevideo/
 默认保存到用户的下载文件夹，可在设置中修改。
 
 ### DeepSeek API配置
-字幕翻译功能使用DeepSeek API，需要配置API密钥：
+字幕翻译功能使用DeepSeek API，支持页面配置：
 
-1. **获取API密钥**
+1. **首次使用自动配置**
+   - 首次启动应用会自动弹出配置对话框
+   - 必须配置API Key才能使用字幕翻译功能
+
+2. **获取API密钥**
    - 访问 [DeepSeek Platform](https://platform.deepseek.com/)
-   - 注册并获取API密钥
+   - 注册账号并创建API密钥
+   - API密钥格式：以 `sk-` 开头
 
-2. **配置方式**
-   - 方式1：直接在 `src/main/subtitle-translator.js` 中设置
-   - 方式2：使用环境变量 `DEEPSEEK_API_KEY`
-   - 方式3：在应用设置界面中配置（开发中）
+3. **配置方式**
+   - **页面配置**（推荐）：点击右上角设置图标，输入API Key
+   - **首次启动**：自动弹出配置对话框，引导用户配置
+   - **随时修改**：点击设置按钮可以随时更新API Key
+   - **安全存储**：API Key安全保存在本地，不会上传到服务器
 
 3. **翻译特性**
    - 批量翻译：每批50条字幕同时处理
@@ -223,6 +229,9 @@ prevideo/
 - ✅ 支持真实YouTube视频下载
 - ✅ 完整的用户界面和交互
 - ✅ 详细的中文文档
+- ✅ 页面配置API Key功能
+- ✅ 硬字幕烧录功能
+- ✅ 实时进度同步显示
 
 ## ⚠️ 免责声明
 
