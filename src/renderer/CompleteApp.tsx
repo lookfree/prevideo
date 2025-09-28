@@ -1,4 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import SettingsDialog from './SettingsDialog';
+import SettingsIcon from '@mui/icons-material/Settings';
+import { IconButton } from '@mui/material';
 
 interface Task {
   id: number;
@@ -31,13 +34,16 @@ const CompleteApp: React.FC = () => {
   const [url, setUrl] = useState('');
   const [tasks, setTasks] = useState<Task[]>([]);
   const [downloadPath, setDownloadPath] = useState('');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [firstTimeSetup, setFirstTimeSetup] = useState(false);
   const [settings, setSettings] = useState({
     bilingualSubtitle: true,
     autoGenerateSubtitle: true,
     videoCompression: false,
     quality: '1080p',
     primaryLanguage: 'zh-CN',
-    secondaryLanguage: 'en'
+    secondaryLanguage: 'en',
+    deepseekApiKey: ''
   });
 
   useEffect(() => {
@@ -47,6 +53,12 @@ const CompleteApp: React.FC = () => {
         const stored = await window.electronAPI.storage.getSettings();
         setDownloadPath(stored.downloadPath || '~/Downloads');
         setSettings(prev => ({...prev, ...stored}));
+
+        // 检查是否首次使用（没有API Key）
+        if (!stored.deepseekApiKey && stored.autoGenerateSubtitle !== false) {
+          setFirstTimeSetup(true);
+          setSettingsOpen(true);
+        }
       } else {
         setDownloadPath('~/Downloads/PreVideo');
       }
@@ -390,6 +402,21 @@ const CompleteApp: React.FC = () => {
       }}>
         🎬 PreVideo YouTube下载器
       </h1>
+      {/* 设置按钮 */}
+      <IconButton
+        onClick={() => setSettingsOpen(true)}
+        style={{
+          position: 'absolute',
+          top: '10px',
+          right: '10px',
+          color: '#fff',
+          background: 'rgba(255,255,255,0.1)',
+          padding: '8px'
+        }}
+        title="设置DeepSeek API"
+      >
+        <SettingsIcon />
+      </IconButton>
 
       {/* 下载输入区 - 单独一行 */}
       <div style={{
@@ -884,6 +911,22 @@ const CompleteApp: React.FC = () => {
       }}>
         <span>✅ Electron v38 | React v18 | YouTube下载 | DeepSeek翻译 | FFmpeg嵌入字幕</span>
       </div>
+
+      {/* 设置对话框 */}
+      <SettingsDialog
+        open={settingsOpen}
+        onClose={() => {
+          setSettingsOpen(false);
+          setFirstTimeSetup(false);
+          // 重新加载设置
+          if (window.electronAPI) {
+            window.electronAPI.storage.getSettings().then(stored => {
+              setSettings(prev => ({...prev, ...stored}));
+            });
+          }
+        }}
+        isFirstTime={firstTimeSetup}
+      />
     </div>
   );
 };

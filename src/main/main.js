@@ -3,10 +3,12 @@ const path = require('path');
 const fs = require('fs');
 const SimpleVideoDownloader = require('./simple-downloader');
 const SubtitleTranslator = require('./subtitle-translator');
+const { getStorage } = require('./storage');
 
 let mainWindow;
 const downloader = new SimpleVideoDownloader();
 const translator = new SubtitleTranslator();
+const storage = getStorage();
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -299,22 +301,13 @@ ipcMain.handle('subtitle:generateAuto', async (event, videoPath) => {
 });
 
 ipcMain.handle('storage:getSettings', async () => {
-  return {
-    downloadPath: app.getPath('downloads'),
-    videoQuality: '1080p',
-    audioQuality: '192k',
-    subtitleEnabled: true,
-    bilingualSubtitle: true,
-    primaryLanguage: 'zh-CN',
-    secondaryLanguage: 'en',
-    compressionEnabled: false,
-    autoGenerateSubtitle: true
-  };
+  return storage.getSettings();
 });
 
 ipcMain.handle('storage:updateSettings', async (event, settings) => {
   console.log('更新设置:', settings);
-  return { success: true };
+  const success = storage.saveSettings(settings);
+  return { success };
 });
 
 // 文件管理

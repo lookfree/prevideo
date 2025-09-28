@@ -1,11 +1,21 @@
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
+const { getStorage } = require('./storage');
 
 class SubtitleTranslator {
   constructor() {
-    this.apiKey = 'sk-a09327e7aa804834a31861a1eb9ac3d3';
+    this.storage = getStorage();
     this.apiUrl = 'https://api.deepseek.com/v1/chat/completions';
+  }
+
+  // 获取API Key
+  getApiKey() {
+    const apiKey = this.storage.getDeepSeekApiKey();
+    if (!apiKey) {
+      throw new Error('未配置DeepSeek API Key，请在设置中配置');
+    }
+    return apiKey;
   }
 
   // 解析 SRT 字幕文件
@@ -67,7 +77,7 @@ ${texts.map((text, i) => `[${i}] ${text}`).join('\n')}`;
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`,
+          'Authorization': `Bearer ${this.getApiKey()}`,
           'Content-Length': Buffer.byteLength(requestData)
         }
       };
